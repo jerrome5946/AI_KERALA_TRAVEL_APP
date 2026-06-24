@@ -29,7 +29,6 @@ def load_assets():
 
 try:
     model, encoder, config = load_assets()
-    # FIXED: Cleaned up the path to point properly to your data folder
     df_places = pd.read_csv('data/data/kerala_spots.csv') 
 
     st.title("🌴 God's Own Country AI Planner & Live Guide")
@@ -45,11 +44,14 @@ try:
         days = st.slider("📅 Trip Duration (Days)", 1, config['max_days'], 2)
         selected_vibe = st.selectbox("🎭 Select Preferred Vibe", config['vibes'])
 
-        # FIXED: Integrated the weather feature smoothly inside this button block
+        # User live GPS location for prediction side routing tracker
+        st.write("💡 *Optional: Enable location on the right panel first to unlock direct route mapping here!*")
+
         if st.button("🔮 Find My Destination", type="primary", use_container_width=True):
             encoded_vibe = encoder.transform([selected_vibe])[0]
             input_data = np.array([[budget, days, encoded_vibe]])
             prediction = model.predict(input_data)[0]
+            
             st.success(f"### 📍 Recommended Spot: **{prediction}**")
             
             # LIVE WEATHER INTEGRATION
@@ -64,6 +66,29 @@ try:
                     st.caption("⚠️ Weather service temporarily busy.")
             except Exception:
                 st.caption("🌐 Unable to load weather data (Check your internet connectivity).")
+                
+            # Extract row matching predicted destination data points
+            predicted_row = df_places[df_places['destination'] == prediction]
+            
+            if not predicted_row.empty:
+                p_lat = float(predicted_row['latitude'].values[0])
+                p_lon = float(predicted_row['longitude'].values[0])
+                
+                # Dynamic Route Link Integration for predicted place
+                # Checking if geolocation session holds accurate radar numbers on right screen
+                if 'user_latitude' in st.session_state and st.session_state['user_latitude'] is not None:
+                    u_lat = st.session_state['user_latitude']
+                    u_lon = st.session_state['user_longitude']
+                    
+                    pred_maps_url = f"https://www.google.com/maps/dir/?api=1&origin={u_lat},{u_lon}&destination={p_lat},{p_lon}&travelmode=driving"
+                    st.link_button(f"🚗 Get Route Map to {prediction}", pred_maps_url, use_container_width=True)
+                else:
+                    # Fallback general map preview when location detection is disabled
+                    st.caption("ℹ️ Enable location tracking on the right panel to get active navigation directions.")
+
+                st.write("### 🗺️ Destination Location Map")
+                pred_map_data = pd.DataFrame({'lat': [p_lat], 'lon': [p_lon]})
+                st.map(pred_map_data, zoom=10)
 
     with col2:
         st.header("📍 Nearest Destination Radar")
@@ -75,6 +100,10 @@ try:
         if location and location.get('latitude') is not None:
             user_lat = location['latitude']
             user_lon = location['longitude']
+            
+            # Persist values inside Session state so Left column can safely read them
+            st.session_state['user_latitude'] = user_lat
+            st.session_state['user_longitude'] = user_lon
             
             st.info(f"**Current Coordinates Found:** Lat {user_lat:.4f}, Lon {user_lon:.4f}")
             
@@ -89,6 +118,10 @@ try:
             st.subheader("🏁 Top 3 Nearest Spots From You:")
             for index, row in df_sorted.iterrows():
                 st.write(f"👉 **{row['destination']}** ({row['vibe']}) — approx **{row['Distance_KM']:.1f} KM** away.")
+                
+                maps_url = f"https://www.google.com/maps/dir/?api=1&origin={user_lat},{user_lon}&destination={row['latitude']},{row['longitude']}&travelmode=driving"
+                st.link_button(f"🚗 Route to {row['destination']}", maps_url, use_container_width=True)
+                st.write("") 
             
             # Plot spots on a built-in interactive visual map layout
             st.write("### 🗺️ Proximity Map")
